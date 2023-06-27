@@ -317,6 +317,7 @@ class Trainer(object):
                         out2,
                         confidence_mask_label,
                         self.config.train.neg_rto,
+                        self.config.train.n_min_neg,
                     )
 
                     optimizer.zero_grad()
