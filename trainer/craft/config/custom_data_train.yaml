@@ -24,7 +24,7 @@ train:
   gamma: 0.2
   weight_decay: 0.00001
   num_workers: 0 # On single gpu, train.py execution only works when num worker = 0 / On multi-gpu, you can set num_worker > 0 to speed up
-  amp: True
+  amp: False
   loss: 2
   neg_rto: 0.3
   n_min_neg: 5000

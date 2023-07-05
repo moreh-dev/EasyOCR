@@ -17,6 +17,8 @@ beta1: 0.9
 rho: 0.95
 eps: 0.00000001
 grad_clip: 5
+pin_memory: False
+prefetch_factor: 512
 #Data processing
 select_data: 'en_train_filtered' # this is dataset folder in train_data
 batch_ratio: '1' 
