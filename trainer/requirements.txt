@@ -12,3 +12,4 @@ matplotlib
 pandas
 natsort
 nltk
+mlflow

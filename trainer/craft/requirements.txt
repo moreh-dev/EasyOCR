@@ -10,3 +10,4 @@ numpy==1.23.1
 tqdm  
 matplotlib
 protobuf<4,>=3.8.0
+mlflow

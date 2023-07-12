@@ -1,6 +1,8 @@
 # Create conda environment and install dependencies
 base_env=$(conda info | grep -i 'base environment' | awk -F': ' '{print $2}' | sed 's/ (read only)//' | tr -d ' ')
 env_name=easyocr_recognition
+batch_szie=32
+
 source ${base_env}/etc/profile.d/conda.sh
 
 if conda env list | grep -q -E "^$env_name\s"; then
@@ -15,7 +17,12 @@ else
 fi
 
 # Train model
-python trainer.py --yaml=custom_data_train
+log_dir="logs_${env_name}"
+mkdir -p $log_dir
+python trainer.py --batch_size=$batch_szie >> "${log_dir}/log_terminal.log" 2>&1 &
+# Capture the process ID (PID) of the training script
+pid=$!
+bash memory_record_moreh.sh $pid $env_name $batch_szie
 
 # Delete conda environment
 echo "deleting env.."

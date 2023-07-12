@@ -112,3 +112,4 @@ ENV/
 *.pth
 */saved_models/*
 trainer/craft/exp/*
+mlruns/
