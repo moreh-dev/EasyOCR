@@ -1,7 +1,8 @@
 # Create conda environment and install dependencies
 base_env=$(conda info | grep -i 'base environment' | awk -F': ' '{print $2}' | sed 's/ (read only)//' | tr -d ' ')
 env_name=easyocr_recognition
-batch_szie=32
+batch_size=$1
+mlflow_uri=$2
 
 source ${base_env}/etc/profile.d/conda.sh
 
@@ -19,10 +20,16 @@ fi
 # Train model
 log_dir="logs_${env_name}"
 mkdir -p $log_dir
-python trainer.py --batch_size=$batch_szie >> "${log_dir}/log_terminal.log" 2>&1 &
+
+if [[ -x $(command -v mlflow) ]] && [[ -z $(pgrep mlflow) ]]; then
+    mlflow server &
+    sleep 5
+fi
+
+python trainer.py --batch_size=$batch_size --mlflow_uri=$mlflow_uri >> "${log_dir}/log_terminal.log" 2>&1 &
 # Capture the process ID (PID) of the training script
 pid=$!
-bash memory_record_moreh.sh $pid $env_name $batch_szie
+bash memory_record_moreh.sh $pid $env_name $batch_size
 
 # Delete conda environment
 echo "deleting env.."

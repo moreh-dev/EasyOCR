@@ -2,14 +2,14 @@ number: '0123456789'
 symbol: "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~ €"
 lang_char: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
 experiment_name: 'en_filtered'
-train_data: 'all_data'
-valid_data: 'all_data/en_val'
+train_data: '/nas/common_data/dataset_for_EasyOcr/dataset_for_recognition_model'
+valid_data: '/nas/common_data/dataset_for_EasyOcr/dataset_for_recognition_model/en_val'
 manualSeed: 1111
 workers: 6
 batch_size: 32 #32
-num_iter: 30
-valInterval: 10
-log_interval: 10
+num_iter: 100
+valInterval: 50
+log_interval: 30
 saved_model: '' #'saved_models/en_filtered/iter_300000.pth'
 FT: False
 optim: False # default is Adadelta
@@ -20,6 +20,7 @@ eps: 0.00000001
 grad_clip: 5
 pin_memory: False
 prefetch_factor: 512
+mlflow_uri: 'http://127.0.0.1:5000'
 #Data processing
 select_data: 'en_train_filtered' # this is dataset folder in train_data
 batch_ratio: '1' 

@@ -7,7 +7,8 @@ import pandas as pd
 import argparse
 
 parser = argparse.ArgumentParser(description="recognition train")
-parser.add_argument('--batch_size', type=int, default=0)
+parser.add_argument('--batch_size', type=int)
+parser.add_argument('--mlflow_uri', type=str)
 args = parser.parse_args()
 
 cudnn.benchmark = True
@@ -29,11 +30,13 @@ def get_config(file_path):
     else:
         opt.character = opt.number + opt.symbol + opt.lang_char
     # Add batch size as an argument
-    if args.batch_size != 0:
+    if args.batch_size!=0 or args.batch_size!=None:
         opt.batch_size = args.batch_size
-
-    os.makedirs(f'./saved_models/{opt.experiment_name}', exist_ok=True)
+    if args.mlflow_uri!=None:
+        opt.mlflow_uri = args.mlflow_uri
     return opt
 
 opt = get_config("config_files/en_filtered_config.yaml")
+os.makedirs(f'./saved_models/{opt.experiment_name}', exist_ok=True)
+
 train(opt, amp=False)

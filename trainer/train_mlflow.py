@@ -164,23 +164,29 @@ def train(opt, show_number = 2, amp=False):
         except:
             pass
 
-    start_time = time.time()
-    best_accuracy = -1
-    best_norm_ED = -1
-    i = start_iter
-
-    scaler = GradScaler()
-    t1= time.time()
 
     # Initialize MLFlow 
     import mlflow
     import datetime
-    # mlflow.set_tracking_uri("http://127.0.0.1:5000")
+    # if not os.environ.get("MLFLOW_TRACKING_URI", None):
+    #     mlflow.set_tracking_uri(opt.mlflow_uri)
+
     current_datetime = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
-    experiment_id = mlflow.create_experiment('{}_{}'.format('easyocr_recognition_model', current_datetime))
-    experiment = mlflow.get_experiment(experiment_id)
-    mlflow_runner = mlflow.start_run(run_name='easyocr_recognition_model', experiment_id=experiment.experiment_id)
+    experiment_name ='easyocr_recognition_model'
+
+    if not mlflow.get_experiment_by_name(experiment_name):        
+        experiment_id = mlflow.create_experiment(experiment_name)
+
+    experiment = mlflow.get_experiment_by_name(experiment_name)
+    mlflow_runner = mlflow.start_run(run_name=f'{opt.batch_size}_{current_datetime}', experiment_id=experiment.experiment_id)
     with mlflow_runner:
+        start_time = time.time()
+        best_accuracy = -1
+        best_norm_ED = -1
+        i = start_iter
+
+        scaler = GradScaler()
+        t1= time.time()
         while(True):
             # Reset start time for each log_interval
             if (i % opt.log_interval == 0):
@@ -231,13 +237,6 @@ def train(opt, show_number = 2, amp=False):
                 torch.nn.utils.clip_grad_norm_(model.parameters(), opt.grad_clip) 
                 optimizer.step()
             loss_avg.add(cost)
-
-            # Log thoughput and loss to mlflow
-            if (i % opt.log_interval == 0) and (i!=0):
-                elapsed_time = time.time() - log_interval_time
-                interval_throughput = opt.log_interval * opt.batch_size / elapsed_time
-                mlflow.log_metric("loss", cost.item(), step=i)
-                mlflow.log_metric("interval_throughput", interval_throughput, step=i)
 
             # validation part
             if (i % opt.valInterval == 0) and (i!=0):
@@ -290,6 +289,13 @@ def train(opt, show_number = 2, amp=False):
                     log.write(predicted_result_log + '\n')
                     print('validation time: ', time.time()-t1)
                     t1=time.time()
+
+            # Log thoughput and loss to mlflow
+            if (i % opt.log_interval == 0) and (i!=0):
+                elapsed_time = time.time() - log_interval_time
+                interval_throughput = opt.log_interval * opt.batch_size / elapsed_time
+                mlflow.log_metric("loss", cost.item(), step=i)
+                mlflow.log_metric("interval_throughput", interval_throughput, step=i)
             # save model per 1e+4 iter.
             if (i + 1) % 1e+4 == 0:
                 torch.save(
@@ -297,7 +303,7 @@ def train(opt, show_number = 2, amp=False):
 
             if i == opt.num_iter:
                 elapsed_time = time.time() - start_time
-                throughput = i * opt.batch_size / elapsed_time
+                throughput = opt.num_iter * opt.batch_size / elapsed_time
                 mlflow.log_metric("avg_throughput", throughput)
                 mlflow.log_params({"model":"recognition", "batch_size": opt.batch_size})
                 print('end the training')
