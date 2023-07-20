@@ -1,4 +1,25 @@
 # EasyOCR
+    
+## How to train models
+1. For recognition model:
+- Change configurations here: `../trainer/config_files/en_filtered_config.yaml`. In this config file, data dir path leads to small dataset. To train on full dataset, modify the config file:
+> `train_data: '/nas/common_data/dataset_for_EasyOcr/dataset_for_recognition_model'`
+> `valid_data: '/nas/common_data/dataset_for_EasyOcr/dataset_for_recognition_model/en_val'`
+
+- Go to folder `/trainer/`
+``` bash
+bash train.sh
+```
+
+2. For detection model (CRAFT):
+- Change configurations here: `../trainer/craft/config/custom_data_train.yaml`. In this config file, data dir path leads to small dataset. To train on full dataset, modify the config file:
+> `data_root_dir: "/nas/common_data/dataset_for_EasyOcr/dataset_for_detection_model/"`
+> `test_data_dir: "/nas/common_data/dataset_for_EasyOcr/dataset_for_detection_model/"`
+
+- Go to folder `/trainer/craft/`
+``` bash
+bash train.sh
+```
 
 [![PyPI Status](https://badge.fury.io/py/easyocr.svg)](https://badge.fury.io/py/easyocr)
 [![license](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/JaidedAI/EasyOCR/blob/master/LICENSE)

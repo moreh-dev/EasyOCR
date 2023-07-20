@@ -107,3 +107,14 @@ ENV/
 .vscode/
 .vs/
 .idea/
+
+# Files and folders created by users
+*.pth
+*/saved_models/*
+*/exp/*
+trainer/craft/exp/*
+*.jpg
+gt_img*.txt
+mlruns/
+exp/
+saved_models/

@@ -11,6 +11,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import wandb
+import torch.multiprocessing
+torch.multiprocessing.set_sharing_strategy('file_system')
 
 from config.load_config import load_yaml, DotDict
 from data.dataset import SynthTextDataSet, CustomDataset
@@ -222,6 +224,20 @@ class Trainer(object):
             scaler = None
 
         criterion = self.get_loss()
+        # Initialize MLFlow 
+        import mlflow
+        import datetime
+        if not os.environ.get("MLFLOW_TRACKING_URI", None):
+            mlflow.set_tracking_uri(self.config.train.mlflow_uri)
+
+        current_datetime = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+        experiment_name ='easyocr_detection_model'
+
+        if not mlflow.get_experiment_by_name(experiment_name):        
+            experiment_id = mlflow.create_experiment(experiment_name)
+
+        experiment = mlflow.get_experiment_by_name(experiment_name)    
+        mlflow_runner = mlflow.start_run(run_name=f'{self.config.train.batch_size}_{current_datetime}', experiment_id=experiment.experiment_id)
 
         # TRAIN -------------------------------------------------------------------------------------------------------#
         train_step = self.config.train.st_iter
@@ -235,62 +251,84 @@ class Trainer(object):
         print(
             "================================ Train start ================================"
         )
-        while train_step < whole_training_step:
-            for (
-                    index,
-                    (
-                            images,
-                            region_scores,
-                            affinity_scores,
-                            confidence_masks,
-                    ),
-            ) in enumerate(trn_real_loader):
-                craft.train()
-                if train_step > 0 and train_step % self.config.train.lr_decay == 0:
-                    update_lr_rate_step += 1
-                    training_lr = self.adjust_learning_rate(
-                        optimizer,
-                        self.config.train.gamma,
-                        update_lr_rate_step,
-                        self.config.train.lr,
-                    )
+        with mlflow_runner:
+            while train_step < whole_training_step:
+                
+                for (
+                        index,
+                        (
+                                images,
+                                region_scores,
+                                affinity_scores,
+                                confidence_masks,
+                        ),
+                ) in enumerate(trn_real_loader):
+                    start_time_step = time.time()
+                    craft.train()
+                    if train_step > 0 and train_step % self.config.train.lr_decay == 0:
+                        update_lr_rate_step += 1
+                        training_lr = self.adjust_learning_rate(
+                            optimizer,
+                            self.config.train.gamma,
+                            update_lr_rate_step,
+                            self.config.train.lr,
+                        )
 
-                images = images.cuda(non_blocking=True)
-                region_scores = region_scores.cuda(non_blocking=True)
-                affinity_scores = affinity_scores.cuda(non_blocking=True)
-                confidence_masks = confidence_masks.cuda(non_blocking=True)
+                    images = images.cuda(non_blocking=True)
+                    region_scores = region_scores.cuda(non_blocking=True)
+                    affinity_scores = affinity_scores.cuda(non_blocking=True)
+                    confidence_masks = confidence_masks.cuda(non_blocking=True)
 
-                if self.config.train.use_synthtext:
-                    # Synth image load
-                    syn_image, syn_region_label, syn_affi_label, syn_confidence_mask = next(
-                        batch_syn
-                    )
-                    syn_image = syn_image.cuda(non_blocking=True)
-                    syn_region_label = syn_region_label.cuda(non_blocking=True)
-                    syn_affi_label = syn_affi_label.cuda(non_blocking=True)
-                    syn_confidence_mask = syn_confidence_mask.cuda(non_blocking=True)
+                    if self.config.train.use_synthtext:
+                        # Synth image load
+                        syn_image, syn_region_label, syn_affi_label, syn_confidence_mask = next(
+                            batch_syn
+                        )
+                        syn_image = syn_image.cuda(non_blocking=True)
+                        syn_region_label = syn_region_label.cuda(non_blocking=True)
+                        syn_affi_label = syn_affi_label.cuda(non_blocking=True)
+                        syn_confidence_mask = syn_confidence_mask.cuda(non_blocking=True)
 
-                    # concat syn & custom image
-                    images = torch.cat((syn_image, images), 0)
-                    region_image_label = torch.cat(
-                        (syn_region_label, region_scores), 0
-                    )
-                    affinity_image_label = torch.cat((syn_affi_label, affinity_scores), 0)
-                    confidence_mask_label = torch.cat(
-                        (syn_confidence_mask, confidence_masks), 0
-                    )
-                else:
-                    region_image_label = region_scores
-                    affinity_image_label = affinity_scores
-                    confidence_mask_label = confidence_masks
+                        # concat syn & custom image
+                        images = torch.cat((syn_image, images), 0)
+                        region_image_label = torch.cat(
+                            (syn_region_label, region_scores), 0
+                        )
+                        affinity_image_label = torch.cat((syn_affi_label, affinity_scores), 0)
+                        confidence_mask_label = torch.cat(
+                            (syn_confidence_mask, confidence_masks), 0
+                        )
+                    else:
+                        region_image_label = region_scores
+                        affinity_image_label = affinity_scores
+                        confidence_mask_label = confidence_masks
 
-                if self.config.train.amp:
-                    with torch.cuda.amp.autocast():
+                    if self.config.train.amp:
+                        with torch.cuda.amp.autocast():
 
+                            output, _ = craft(images)
+                            out1 = output[:, :, :, 0]
+                            out2 = output[:, :, :, 1]
+
+                            loss = criterion(
+                                region_image_label,
+                                affinity_image_label,
+                                out1,
+                                out2,
+                                confidence_mask_label,
+                                self.config.train.neg_rto,
+                                self.config.train.n_min_neg,
+                            )
+
+                        optimizer.zero_grad()
+                        scaler.scale(loss).backward()
+                        scaler.step(optimizer)
+                        scaler.update()
+
+                    else:
                         output, _ = craft(images)
                         out1 = output[:, :, :, 0]
                         out2 = output[:, :, :, 1]
-
                         loss = criterion(
                             region_image_label,
                             affinity_image_label,
@@ -301,103 +339,96 @@ class Trainer(object):
                             self.config.train.n_min_neg,
                         )
 
-                    optimizer.zero_grad()
-                    scaler.scale(loss).backward()
-                    scaler.step(optimizer)
-                    scaler.update()
+                        optimizer.zero_grad()
+                        loss.backward()
+                        optimizer.step()
 
-                else:
-                    output, _ = craft(images)
-                    out1 = output[:, :, :, 0]
-                    out2 = output[:, :, :, 1]
-                    loss = criterion(
-                        region_image_label,
-                        affinity_image_label,
-                        out1,
-                        out2,
-                        confidence_mask_label,
-                        self.config.train.neg_rto,
-                        self.config.train.n_min_neg,
-                    )
+                    end_time = time.time()
+                    loss_value += loss.item()
+                    batch_time += end_time - start_time_step
 
-                    optimizer.zero_grad()
-                    loss.backward()
-                    optimizer.step()
+                    if train_step > 0 and train_step % self.config.train.log_interval == 0:
+                        mean_loss = loss_value / self.config.train.log_interval
+                        loss_value = 0
+                        interval_throughput = (self.config.train.log_interval * self.config.train.batch_size) / batch_time
 
-                end_time = time.time()
-                loss_value += loss.item()
-                batch_time += end_time - start_time
+                        # Log metrics for each interval (e.g. each 5 steps)
+                        mlflow.log_metric('interval_loss', loss.item(), step=train_step)
+                        mlflow.log_metric('interval_throughput', interval_throughput, step=train_step)
 
-                if train_step > 0 and train_step % 5 == 0:
-                    mean_loss = loss_value / 5
-                    loss_value = 0
-                    avg_batch_time = batch_time / 5
-                    batch_time = 0
+                        avg_batch_time = batch_time / self.config.train.log_interval
+                        batch_time = 0
 
-                    print(
-                        "{}, training_step: {}|{}, learning rate: {:.8f}, "
-                        "training_loss: {:.5f}, avg_batch_time: {:.5f}".format(
-                            time.strftime(
-                                "%Y-%m-%d:%H:%M:%S", time.localtime(time.time())
-                            ),
-                            train_step,
-                            whole_training_step,
-                            training_lr,
-                            mean_loss,
-                            avg_batch_time,
+                        print(
+                            "{}, training_step: {}|{}, learning rate: {:.8f}, "
+                            "training_loss: {:.5f}, avg_batch_time: {:.5f}".format(
+                                time.strftime(
+                                    "%Y-%m-%d:%H:%M:%S", time.localtime(time.time())
+                                ),
+                                train_step,
+                                whole_training_step,
+                                training_lr,
+                                mean_loss,
+                                avg_batch_time,
+                            )
                         )
-                    )
 
-                    if self.config.wandb_opt:
-                        wandb.log({"train_step": train_step, "mean_loss": mean_loss})
+                        if self.config.wandb_opt:
+                            wandb.log({"train_step": train_step, "mean_loss": mean_loss})
 
-                if (
-                        train_step % self.config.train.eval_interval == 0
-                        and train_step != 0
-                ):
+                    if (
+                            train_step % self.config.train.eval_interval == 0
+                            and train_step != 0
+                    ):
 
-                    craft.eval()
+                        craft.eval()
 
-                    print("Saving state, index:", train_step)
-                    save_param_dic = {
-                        "iter": train_step,
-                        "craft": craft.state_dict(),
-                        "optimizer": optimizer.state_dict(),
-                    }
-                    save_param_path = (
-                            self.config.results_dir
-                            + "/CRAFT_clr_"
-                            + repr(train_step)
-                            + ".pth"
-                    )
-
-                    if self.config.train.amp:
-                        save_param_dic["scaler"] = scaler.state_dict()
+                        print("Saving state, index:", train_step)
+                        save_param_dic = {
+                            "iter": train_step,
+                            "craft": craft.state_dict(),
+                            "optimizer": optimizer.state_dict(),
+                        }
                         save_param_path = (
                                 self.config.results_dir
-                                + "/CRAFT_clr_amp_"
+                                + "/CRAFT_clr_"
                                 + repr(train_step)
                                 + ".pth"
                         )
 
-                    torch.save(save_param_dic, save_param_path)
+                        if self.config.train.amp:
+                            save_param_dic["scaler"] = scaler.state_dict()
+                            save_param_path = (
+                                    self.config.results_dir
+                                    + "/CRAFT_clr_amp_"
+                                    + repr(train_step)
+                                    + ".pth"
+                            )
 
-                    # validation
-                    self.iou_eval(
-                        "custom_data",
-                        train_step,
-                        buffer_dict["custom_data"],
-                        craft,
-                    )
+                        torch.save(save_param_dic, save_param_path)
 
-                train_step += 1
-                if train_step >= whole_training_step:
-                    break
+                        # validation
+                        self.iou_eval(
+                            "custom_data",
+                            train_step,
+                            buffer_dict["custom_data"],
+                            craft,
+                        )
 
-            if self.config.mode == "weak_supervision":
-                state_dict = craft.module.state_dict()
-                supervision_model.load_state_dict(state_dict)
-                trn_real_dataset.update_model(supervision_model)
+                    train_step += 1
+                    if train_step >= whole_training_step:
+                        break
+
+                if self.config.mode == "weak_supervision":
+                    state_dict = craft.module.state_dict()
+                    supervision_model.load_state_dict(state_dict)
+                    trn_real_dataset.update_model(supervision_model)
+
+            # Log average throughput
+            total_data_samples = self.config.train.batch_size * whole_training_step
+            elapsed_time = time.time() - start_time
+            mlflow.log_metric('avg_throughput', total_data_samples/elapsed_time)
+            mlflow.log_params({'model': 'detection_craft', 'batch_size':self.config.train.batch_size})
 
         # save last model
         save_param_dic = {
@@ -432,6 +463,12 @@ def main():
     parser.add_argument(
         "--port", "--use ddp port", default="2346", type=str, help="Port number"
     )
+    parser.add_argument(
+        "--batch_size", default=0, type=int, help="batch size"
+    )
+    parser.add_argument(
+        "--mlflow_uri", default="http://127.0.0.1:5000", type=str , help="mlflow_uri"
+    )
 
     args = parser.parse_args()
 
@@ -439,6 +476,12 @@ def main():
     exp_name = args.yaml
     config = load_yaml(args.yaml)
 
+    # Add batch size as an argument
+    if args.batch_size != 0 and args.batch_size != None:
+        config["train"]["batch_size"] = args.batch_size
+
+    if args.mlflow_uri != None:
+        config["train"]["mlflow_uri"] = args.mlflow_uri
     print("-" * 20 + " Options " + "-" * 20)
     print(yaml.dump(config))
     print("-" * 40)
