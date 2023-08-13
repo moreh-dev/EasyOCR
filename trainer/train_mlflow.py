@@ -171,57 +171,36 @@ def train(opt, show_number = 2, amp=False):
     # if not os.environ.get("MLFLOW_TRACKING_URI", None):
     #     mlflow.set_tracking_uri(opt.mlflow_uri)
 
-    current_datetime = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
-    experiment_name ='easyocr_recognition_model'
+    # current_datetime = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+    # experiment_name ='easyocr_recognition_model'
 
-    if not mlflow.get_experiment_by_name(experiment_name):        
-        experiment_id = mlflow.create_experiment(experiment_name)
+    # if not mlflow.get_experiment_by_name(experiment_name):        
+    #     experiment_id = mlflow.create_experiment(experiment_name)
 
-    experiment = mlflow.get_experiment_by_name(experiment_name)
-    mlflow_runner = mlflow.start_run(run_name=f'{opt.batch_size}_{current_datetime}', experiment_id=experiment.experiment_id)
-    with mlflow_runner:
-        start_time = time.time()
-        best_accuracy = -1
-        best_norm_ED = -1
-        i = start_iter
+    # experiment = mlflow.get_experiment_by_name(experiment_name)
+    # mlflow_runner = mlflow.start_run(run_name=f'{opt.batch_size}_{current_datetime}', experiment_id=experiment.experiment_id)
+    mlflow.start_run()
+    start_time = time.time()
+    best_accuracy = -1
+    best_norm_ED = -1
+    i = start_iter
 
-        scaler = GradScaler()
-        t1= time.time()
-        while(True):
-            # Reset start time for each log_interval
-            if (i % opt.log_interval == 0):
-                log_interval_time = time.time()
-            # train part
-            optimizer.zero_grad(set_to_none=True)
+    scaler = GradScaler()
+    t1= time.time()
+    while(True):
+        # Reset start time for each logging_interval
+        if (i % opt.logging_interval == 0):
+            log_interval_time = time.time()
+        # train part
+        optimizer.zero_grad(set_to_none=True)
 
-            if amp:
-                with autocast():
-                    image_tensors, labels = train_dataset.get_batch()
-                    image = image_tensors.to(device)
-                    text, length = converter.encode(labels, batch_max_length=opt.batch_max_length)
-                    batch_size = image.size(0)
-
-                    if 'CTC' in opt.Prediction:
-                        preds = model(image, text).log_softmax(2)
-                        preds_size = torch.IntTensor([preds.size(1)] * batch_size)
-                        preds = preds.permute(1, 0, 2)
-                        torch.backends.cudnn.enabled = False
-                        cost = criterion(preds, text.to(device), preds_size.to(device), length.to(device))
-                        torch.backends.cudnn.enabled = True
-                    else:
-                        preds = model(image, text[:, :-1])  # align with Attention.forward
-                        target = text[:, 1:]  # without [GO] Symbol
-                        cost = criterion(preds.view(-1, preds.shape[-1]), target.contiguous().view(-1))
-                scaler.scale(cost).backward()
-                scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), opt.grad_clip)
-                scaler.step(optimizer)
-                scaler.update()
-            else:
+        if amp:
+            with autocast():
                 image_tensors, labels = train_dataset.get_batch()
                 image = image_tensors.to(device)
                 text, length = converter.encode(labels, batch_max_length=opt.batch_max_length)
                 batch_size = image.size(0)
+
                 if 'CTC' in opt.Prediction:
                     preds = model(image, text).log_softmax(2)
                     preds_size = torch.IntTensor([preds.size(1)] * batch_size)
@@ -233,79 +212,102 @@ def train(opt, show_number = 2, amp=False):
                     preds = model(image, text[:, :-1])  # align with Attention.forward
                     target = text[:, 1:]  # without [GO] Symbol
                     cost = criterion(preds.view(-1, preds.shape[-1]), target.contiguous().view(-1))
-                cost.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), opt.grad_clip) 
-                optimizer.step()
-            loss_avg.add(cost)
+            scaler.scale(cost).backward()
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), opt.grad_clip)
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            image_tensors, labels = train_dataset.get_batch()
+            image = image_tensors.to(device)
+            text, length = converter.encode(labels, batch_max_length=opt.batch_max_length)
+            batch_size = image.size(0)
+            if 'CTC' in opt.Prediction:
+                preds = model(image, text).log_softmax(2)
+                preds_size = torch.IntTensor([preds.size(1)] * batch_size)
+                preds = preds.permute(1, 0, 2)
+                torch.backends.cudnn.enabled = False
+                cost = criterion(preds, text.to(device), preds_size.to(device), length.to(device))
+                torch.backends.cudnn.enabled = True
+            else:
+                preds = model(image, text[:, :-1])  # align with Attention.forward
+                target = text[:, 1:]  # without [GO] Symbol
+                cost = criterion(preds.view(-1, preds.shape[-1]), target.contiguous().view(-1))
+            cost.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), opt.grad_clip) 
+            optimizer.step()
+        loss_avg.add(cost)
 
-            # validation part
-            if (i % opt.valInterval == 0) and (i!=0):
-                print('training time: ', time.time()-t1)
+        # validation part
+        if (i % opt.valInterval == 0) and (i!=0):
+            print('training time: ', time.time()-t1)
+            t1=time.time()
+            elapsed_time = time.time() - start_time
+            # for log
+            with open(f'./saved_models/{opt.experiment_name}/log_train.txt', 'a', encoding="utf8") as log:
+                model.eval()
+                with torch.no_grad():
+                    valid_loss, current_accuracy, current_norm_ED, preds, confidence_score, labels,\
+                    infer_time, length_of_data = validation(model, criterion, valid_loader, converter, opt, device)
+                model.train()
+
+                # training loss and validation loss
+                loss_log = f'[{i}/{opt.num_iter}] Train loss: {loss_avg.val():0.5f}, Valid loss: {valid_loss:0.5f}, Elapsed_time: {elapsed_time:0.5f}'
+                loss_avg.reset()
+
+                current_model_log = f'{"Current_accuracy":17s}: {current_accuracy:0.3f}, {"Current_norm_ED":17s}: {current_norm_ED:0.4f}'
+
+                # keep best accuracy model (on valid dataset)
+                if current_accuracy > best_accuracy:
+                    best_accuracy = current_accuracy
+                    torch.save(model.state_dict(), f'./saved_models/{opt.experiment_name}/best_accuracy.pth')
+                if current_norm_ED > best_norm_ED:
+                    best_norm_ED = current_norm_ED
+                    torch.save(model.state_dict(), f'./saved_models/{opt.experiment_name}/best_norm_ED.pth')
+                best_model_log = f'{"Best_accuracy":17s}: {best_accuracy:0.3f}, {"Best_norm_ED":17s}: {best_norm_ED:0.4f}'
+
+                loss_model_log = f'{loss_log}\n{current_model_log}\n{best_model_log}'
+                print(loss_model_log)
+                log.write(loss_model_log + '\n')
+
+                # show some predicted results
+                dashed_line = '-' * 80
+                head = f'{"Ground Truth":25s} | {"Prediction":25s} | Confidence Score & T/F'
+                predicted_result_log = f'{dashed_line}\n{head}\n{dashed_line}\n'
+
+                #show_number = min(show_number, len(labels))
+
+                start = random.randint(0,len(labels) - show_number )    
+                for gt, pred, confidence in zip(labels[start:start+show_number], preds[start:start+show_number], confidence_score[start:start+show_number]):
+                    if 'Attn' in opt.Prediction:
+                        gt = gt[:gt.find('[s]')]
+                        pred = pred[:pred.find('[s]')]
+
+                    predicted_result_log += f'{gt:25s} | {pred:25s} | {confidence:0.4f}\t{str(pred == gt)}\n'
+                predicted_result_log += f'{dashed_line}'
+                print(predicted_result_log)
+                log.write(predicted_result_log + '\n')
+                print('validation time: ', time.time()-t1)
                 t1=time.time()
-                elapsed_time = time.time() - start_time
-                # for log
-                with open(f'./saved_models/{opt.experiment_name}/log_train.txt', 'a', encoding="utf8") as log:
-                    model.eval()
-                    with torch.no_grad():
-                        valid_loss, current_accuracy, current_norm_ED, preds, confidence_score, labels,\
-                        infer_time, length_of_data = validation(model, criterion, valid_loader, converter, opt, device)
-                    model.train()
 
-                    # training loss and validation loss
-                    loss_log = f'[{i}/{opt.num_iter}] Train loss: {loss_avg.val():0.5f}, Valid loss: {valid_loss:0.5f}, Elapsed_time: {elapsed_time:0.5f}'
-                    loss_avg.reset()
+        # Log thoughput and loss to mlflow
+        if (i % opt.logging_interval == 0) and (i!=0):
+            elapsed_time = time.time() - log_interval_time
+            throughput = opt.logging_interval * opt.batch_size / elapsed_time
+            mlflow.log_metric("loss", cost.item(), step=i)
+            mlflow.log_metric("throughput", throughput, step=i)
+            mlflow.log_metric("lr", opt.lr, step=i)
+        # save model per 1e+4 iter.
+        if (i + 1) % 1e+4 == 0:
+            torch.save(
+                model.state_dict(), f'./saved_models/{opt.experiment_name}/iter_{i+1}.pth')
 
-                    current_model_log = f'{"Current_accuracy":17s}: {current_accuracy:0.3f}, {"Current_norm_ED":17s}: {current_norm_ED:0.4f}'
-
-                    # keep best accuracy model (on valid dataset)
-                    if current_accuracy > best_accuracy:
-                        best_accuracy = current_accuracy
-                        torch.save(model.state_dict(), f'./saved_models/{opt.experiment_name}/best_accuracy.pth')
-                    if current_norm_ED > best_norm_ED:
-                        best_norm_ED = current_norm_ED
-                        torch.save(model.state_dict(), f'./saved_models/{opt.experiment_name}/best_norm_ED.pth')
-                    best_model_log = f'{"Best_accuracy":17s}: {best_accuracy:0.3f}, {"Best_norm_ED":17s}: {best_norm_ED:0.4f}'
-
-                    loss_model_log = f'{loss_log}\n{current_model_log}\n{best_model_log}'
-                    print(loss_model_log)
-                    log.write(loss_model_log + '\n')
-
-                    # show some predicted results
-                    dashed_line = '-' * 80
-                    head = f'{"Ground Truth":25s} | {"Prediction":25s} | Confidence Score & T/F'
-                    predicted_result_log = f'{dashed_line}\n{head}\n{dashed_line}\n'
-
-                    #show_number = min(show_number, len(labels))
-
-                    start = random.randint(0,len(labels) - show_number )    
-                    for gt, pred, confidence in zip(labels[start:start+show_number], preds[start:start+show_number], confidence_score[start:start+show_number]):
-                        if 'Attn' in opt.Prediction:
-                            gt = gt[:gt.find('[s]')]
-                            pred = pred[:pred.find('[s]')]
-
-                        predicted_result_log += f'{gt:25s} | {pred:25s} | {confidence:0.4f}\t{str(pred == gt)}\n'
-                    predicted_result_log += f'{dashed_line}'
-                    print(predicted_result_log)
-                    log.write(predicted_result_log + '\n')
-                    print('validation time: ', time.time()-t1)
-                    t1=time.time()
-
-            # Log thoughput and loss to mlflow
-            if (i % opt.log_interval == 0) and (i!=0):
-                elapsed_time = time.time() - log_interval_time
-                interval_throughput = opt.log_interval * opt.batch_size / elapsed_time
-                mlflow.log_metric("loss", cost.item(), step=i)
-                mlflow.log_metric("interval_throughput", interval_throughput, step=i)
-            # save model per 1e+4 iter.
-            if (i + 1) % 1e+4 == 0:
-                torch.save(
-                    model.state_dict(), f'./saved_models/{opt.experiment_name}/iter_{i+1}.pth')
-
-            if i == opt.num_iter:
-                elapsed_time = time.time() - start_time
-                throughput = opt.num_iter * opt.batch_size / elapsed_time
-                mlflow.log_metric("avg_throughput", throughput)
-                mlflow.log_params({"model":"recognition", "batch_size": opt.batch_size})
-                print('end the training')
-                sys.exit()
-            i += 1
+        if i == opt.num_iter:
+            elapsed_time = time.time() - start_time
+            throughput = opt.num_iter * opt.batch_size / elapsed_time
+            mlflow.log_metric("avg_throughput", throughput)
+            mlflow.log_params({'model': "recognition" ,'batch_size': opt.batch_size, 'logging_interval': opt.logging_interval})
+            print('end the training')
+            mlflow.end_run()
+            sys.exit()
+        i += 1
