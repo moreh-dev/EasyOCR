@@ -17,6 +17,9 @@ from model import Model
 from test import validation
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+if torch.__version__.startswith('1.13.1+cu116.moreh'):
+    torch.multiprocessing.set_sharing_strategy('file_system')
+    
 def count_parameters(model):
     print("Modules, Parameters")
     total_params = 0
