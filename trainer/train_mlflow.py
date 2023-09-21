@@ -190,7 +190,10 @@ def train(opt, show_number = 2, amp=False):
     while(True):
         # Reset start time for each logging_interval
         if (i % opt.logging_interval == 0):
-            log_interval_time = time.time()
+            start_interval_time = time.time()
+        
+        runtime = 0
+        start_step_time = time.time()
         # train part
         optimizer.zero_grad(set_to_none=True)
 
@@ -237,7 +240,7 @@ def train(opt, show_number = 2, amp=False):
             torch.nn.utils.clip_grad_norm_(model.parameters(), opt.grad_clip) 
             optimizer.step()
         loss_avg.add(cost)
-
+        runtime += time.time() - start_step_time
         # validation part
         if (i % opt.valInterval == 0) and (i!=0):
             print('training time: ', time.time()-t1)
@@ -292,8 +295,8 @@ def train(opt, show_number = 2, amp=False):
 
         # Log thoughput and loss to mlflow
         if (i % opt.logging_interval == 0) and (i!=0):
-            elapsed_time = time.time() - log_interval_time
-            throughput = opt.logging_interval * opt.batch_size / elapsed_time
+            interval_time = time.time() - start_interval_time
+            throughput = opt.logging_interval * opt.batch_size / interval_time
             mlflow.log_metric("loss", cost.item(), step=i)
             mlflow.log_metric("throughput", throughput, step=i)
             mlflow.log_metric("lr", opt.lr, step=i)
@@ -303,10 +306,10 @@ def train(opt, show_number = 2, amp=False):
                 model.state_dict(), f'./saved_models/{opt.experiment_name}/iter_{i+1}.pth')
 
         if i == opt.num_iter:
-            elapsed_time = time.time() - start_time
-            throughput = opt.num_iter * opt.batch_size / elapsed_time
+            throughput = opt.num_iter * opt.batch_size / runtime
             mlflow.log_metric("avg_throughput", throughput)
-            mlflow.log_params({'model': "recognition" ,'batch_size': opt.batch_size, 'logging_interval': opt.logging_interval})
+            mlflow.log_metric("epoch_runtime", runtime)
+            mlflow.log_params({'model': "recognition" })
             print('end the training')
             mlflow.end_run()
             sys.exit()

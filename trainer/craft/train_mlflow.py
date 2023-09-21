@@ -227,17 +227,17 @@ class Trainer(object):
         # Initialize MLFlow 
         import mlflow
         import datetime
-        if not os.environ.get("MLFLOW_TRACKING_URI", None):
-            mlflow.set_tracking_uri(self.config.train.mlflow_uri)
+        # if not os.environ.get("MLFLOW_TRACKING_URI", None):
+        #     mlflow.set_tracking_uri(self.config.train.mlflow_uri)
 
-        current_datetime = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
-        experiment_name ='easyocr_detection_model'
+        # current_datetime = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+        # experiment_name ='easyocr_detection_model'
 
-        if not mlflow.get_experiment_by_name(experiment_name):        
-            experiment_id = mlflow.create_experiment(experiment_name)
+        # if not mlflow.get_experiment_by_name(experiment_name):        
+        #     experiment_id = mlflow.create_experiment(experiment_name)
 
-        experiment = mlflow.get_experiment_by_name(experiment_name)    
-        mlflow_runner = mlflow.start_run(run_name=f'{self.config.train.batch_size}_{current_datetime}', experiment_id=experiment.experiment_id)
+        # experiment = mlflow.get_experiment_by_name(experiment_name)    
+        # mlflow_runner = mlflow.start_run(run_name=f'{self.config.train.batch_size}_{current_datetime}', experiment_id=experiment.experiment_id)
 
         # TRAIN -------------------------------------------------------------------------------------------------------#
         train_step = self.config.train.st_iter
@@ -246,89 +246,71 @@ class Trainer(object):
         training_lr = self.config.train.lr
         loss_value = 0
         batch_time = 0
-        start_time = time.time()
+        elapsed_time = 0
 
         print(
             "================================ Train start ================================"
         )
-        with mlflow_runner:
-            while train_step < whole_training_step:
-                
-                for (
-                        index,
-                        (
-                                images,
-                                region_scores,
-                                affinity_scores,
-                                confidence_masks,
-                        ),
-                ) in enumerate(trn_real_loader):
-                    start_time_step = time.time()
-                    craft.train()
-                    if train_step > 0 and train_step % self.config.train.lr_decay == 0:
-                        update_lr_rate_step += 1
-                        training_lr = self.adjust_learning_rate(
-                            optimizer,
-                            self.config.train.gamma,
-                            update_lr_rate_step,
-                            self.config.train.lr,
-                        )
+        # with mlflow_runner:
+        mlflow.start_run()
+        while train_step < whole_training_step:
+            
+            for (
+                    index,
+                    (
+                            images,
+                            region_scores,
+                            affinity_scores,
+                            confidence_masks,
+                    ),
+            ) in enumerate(trn_real_loader):
+                start_time_step = time.time()
+                craft.train()
+                if train_step > 0 and train_step % self.config.train.lr_decay == 0:
+                    update_lr_rate_step += 1
+                    training_lr = self.adjust_learning_rate(
+                        optimizer,
+                        self.config.train.gamma,
+                        update_lr_rate_step,
+                        self.config.train.lr,
+                    )
 
-                    images = images.cuda(non_blocking=True)
-                    region_scores = region_scores.cuda(non_blocking=True)
-                    affinity_scores = affinity_scores.cuda(non_blocking=True)
-                    confidence_masks = confidence_masks.cuda(non_blocking=True)
+                images = images.cuda(non_blocking=True)
+                region_scores = region_scores.cuda(non_blocking=True)
+                affinity_scores = affinity_scores.cuda(non_blocking=True)
+                confidence_masks = confidence_masks.cuda(non_blocking=True)
 
-                    if self.config.train.use_synthtext:
-                        # Synth image load
-                        syn_image, syn_region_label, syn_affi_label, syn_confidence_mask = next(
-                            batch_syn
-                        )
-                        syn_image = syn_image.cuda(non_blocking=True)
-                        syn_region_label = syn_region_label.cuda(non_blocking=True)
-                        syn_affi_label = syn_affi_label.cuda(non_blocking=True)
-                        syn_confidence_mask = syn_confidence_mask.cuda(non_blocking=True)
+                if self.config.train.use_synthtext:
+                    # Synth image load
+                    syn_image, syn_region_label, syn_affi_label, syn_confidence_mask = next(
+                        batch_syn
+                    )
+                    syn_image = syn_image.cuda(non_blocking=True)
+                    syn_region_label = syn_region_label.cuda(non_blocking=True)
+                    syn_affi_label = syn_affi_label.cuda(non_blocking=True)
+                    syn_confidence_mask = syn_confidence_mask.cuda(non_blocking=True)
 
-                        # concat syn & custom image
-                        images = torch.cat((syn_image, images), 0)
-                        region_image_label = torch.cat(
-                            (syn_region_label, region_scores), 0
-                        )
-                        affinity_image_label = torch.cat((syn_affi_label, affinity_scores), 0)
-                        confidence_mask_label = torch.cat(
-                            (syn_confidence_mask, confidence_masks), 0
-                        )
-                    else:
-                        region_image_label = region_scores
-                        affinity_image_label = affinity_scores
-                        confidence_mask_label = confidence_masks
+                    # concat syn & custom image
+                    images = torch.cat((syn_image, images), 0)
+                    region_image_label = torch.cat(
+                        (syn_region_label, region_scores), 0
+                    )
+                    affinity_image_label = torch.cat((syn_affi_label, affinity_scores), 0)
+                    confidence_mask_label = torch.cat(
+                        (syn_confidence_mask, confidence_masks), 0
+                    )
+                else:
+                    region_image_label = region_scores
+                    affinity_image_label = affinity_scores
+                    confidence_mask_label = confidence_masks
 
-                    if self.config.train.amp:
-                        with torch.cuda.amp.autocast():
+                if self.config.train.amp:
+                    with torch.cuda.amp.autocast():
 
-                            output, _ = craft(images)
-                            out1 = output[:, :, :, 0]
-                            out2 = output[:, :, :, 1]
-
-                            loss = criterion(
-                                region_image_label,
-                                affinity_image_label,
-                                out1,
-                                out2,
-                                confidence_mask_label,
-                                self.config.train.neg_rto,
-                                self.config.train.n_min_neg,
-                            )
-
-                        optimizer.zero_grad()
-                        scaler.scale(loss).backward()
-                        scaler.step(optimizer)
-                        scaler.update()
-
-                    else:
                         output, _ = craft(images)
                         out1 = output[:, :, :, 0]
                         out2 = output[:, :, :, 1]
+
                         loss = criterion(
                             region_image_label,
                             affinity_image_label,
@@ -339,96 +321,116 @@ class Trainer(object):
                             self.config.train.n_min_neg,
                         )
 
-                        optimizer.zero_grad()
-                        loss.backward()
-                        optimizer.step()
+                    optimizer.zero_grad()
+                    scaler.scale(loss).backward()
+                    scaler.step(optimizer)
+                    scaler.update()
 
-                    end_time = time.time()
-                    loss_value += loss.item()
-                    batch_time += end_time - start_time_step
+                else:
+                    output, _ = craft(images)
+                    out1 = output[:, :, :, 0]
+                    out2 = output[:, :, :, 1]
+                    loss = criterion(
+                        region_image_label,
+                        affinity_image_label,
+                        out1,
+                        out2,
+                        confidence_mask_label,
+                        self.config.train.neg_rto,
+                        self.config.train.n_min_neg,
+                    )
 
-                    if train_step > 0 and train_step % self.config.train.log_interval == 0:
-                        mean_loss = loss_value / self.config.train.log_interval
-                        loss_value = 0
-                        interval_throughput = (self.config.train.log_interval * self.config.train.batch_size) / batch_time
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
 
-                        # Log metrics for each interval (e.g. each 5 steps)
-                        mlflow.log_metric('interval_loss', loss.item(), step=train_step)
-                        mlflow.log_metric('interval_throughput', interval_throughput, step=train_step)
+                end_time = time.time()
+                loss_value += loss.item()
+                batch_time += end_time - start_time_step
+                elapsed_time += batch_time
+                if train_step > 0 and train_step % self.config.train.logging_interval == 0:
+                    mean_loss = loss_value / self.config.train.logging_interval
+                    loss_value = 0
+                    interval_throughput = (self.config.train.logging_interval * self.config.train.batch_size) / batch_time
 
-                        avg_batch_time = batch_time / self.config.train.log_interval
-                        batch_time = 0
+                    # Log metrics for each interval (e.g. each 5 steps)
+                    mlflow.log_metric('loss', loss.item(), step=train_step)
+                    mlflow.log_metric('throughput', interval_throughput, step=train_step)
+                    mlflow.log_metric('lr', training_lr, step=train_step)
+                    avg_batch_time = batch_time / self.config.train.logging_interval
+                    batch_time = 0
 
-                        print(
-                            "{}, training_step: {}|{}, learning rate: {:.8f}, "
-                            "training_loss: {:.5f}, avg_batch_time: {:.5f}".format(
-                                time.strftime(
-                                    "%Y-%m-%d:%H:%M:%S", time.localtime(time.time())
-                                ),
-                                train_step,
-                                whole_training_step,
-                                training_lr,
-                                mean_loss,
-                                avg_batch_time,
-                            )
+                    print(
+                        "{}, training_step: {}|{}, learning rate: {:.8f}, "
+                        "training_loss: {:.5f}, avg_batch_time: {:.5f}".format(
+                            time.strftime(
+                                "%Y-%m-%d:%H:%M:%S", time.localtime(time.time())
+                            ),
+                            train_step,
+                            whole_training_step,
+                            training_lr,
+                            mean_loss,
+                            avg_batch_time,
                         )
+                    )
 
-                        if self.config.wandb_opt:
-                            wandb.log({"train_step": train_step, "mean_loss": mean_loss})
+                    if self.config.wandb_opt:
+                        wandb.log({"train_step": train_step, "mean_loss": mean_loss})
 
-                    if (
-                            train_step % self.config.train.eval_interval == 0
-                            and train_step != 0
-                    ):
+                if (
+                        train_step % self.config.train.eval_interval == 0
+                        and train_step != 0
+                ):
 
-                        craft.eval()
+                    craft.eval()
 
-                        print("Saving state, index:", train_step)
-                        save_param_dic = {
-                            "iter": train_step,
-                            "craft": craft.state_dict(),
-                            "optimizer": optimizer.state_dict(),
-                        }
+                    print("Saving state, index:", train_step)
+                    save_param_dic = {
+                        "iter": train_step,
+                        "craft": craft.state_dict(),
+                        "optimizer": optimizer.state_dict(),
+                    }
+                    save_param_path = (
+                            self.config.results_dir
+                            + "/CRAFT_clr_"
+                            + repr(train_step)
+                            + ".pth"
+                    )
+
+                    if self.config.train.amp:
+                        save_param_dic["scaler"] = scaler.state_dict()
                         save_param_path = (
                                 self.config.results_dir
-                                + "/CRAFT_clr_"
+                                + "/CRAFT_clr_amp_"
                                 + repr(train_step)
                                 + ".pth"
                         )
 
-                        if self.config.train.amp:
-                            save_param_dic["scaler"] = scaler.state_dict()
-                            save_param_path = (
-                                    self.config.results_dir
-                                    + "/CRAFT_clr_amp_"
-                                    + repr(train_step)
-                                    + ".pth"
-                            )
+                    torch.save(save_param_dic, save_param_path)
 
-                        torch.save(save_param_dic, save_param_path)
+                    # validation
+                    self.iou_eval(
+                        "custom_data",
+                        train_step,
+                        buffer_dict["custom_data"],
+                        craft,
+                    )
 
-                        # validation
-                        self.iou_eval(
-                            "custom_data",
-                            train_step,
-                            buffer_dict["custom_data"],
-                            craft,
-                        )
+                train_step += 1
+                if train_step >= whole_training_step:
+                    # Log average throughput
+                    total_data_samples = self.config.train.batch_size * whole_training_step
 
-                    train_step += 1
-                    if train_step >= whole_training_step:
-                        break
+                    mlflow.log_metric('avg_throughput', total_data_samples/elapsed_time)
+                    mlflow.log_metric('epoch_runtime', elapsed_time)
+                    mlflow.log_params({'model': 'detection_craft'})
+                    mlflow.end_run()
+                    break
 
-                if self.config.mode == "weak_supervision":
-                    state_dict = craft.module.state_dict()
-                    supervision_model.load_state_dict(state_dict)
-                    trn_real_dataset.update_model(supervision_model)
-
-            # Log average throughput
-            total_data_samples = self.config.train.batch_size * whole_training_step
-            elapsed_time = time.time() - start_time
-            mlflow.log_metric('avg_throughput', total_data_samples/elapsed_time)
-            mlflow.log_params({'model': 'detection_craft', 'batch_size':self.config.train.batch_size})
+            if self.config.mode == "weak_supervision":
+                state_dict = craft.module.state_dict()
+                supervision_model.load_state_dict(state_dict)
+                trn_real_dataset.update_model(supervision_model)
 
         # save last model
         save_param_dic = {
@@ -464,24 +466,41 @@ def main():
         "--port", "--use ddp port", default="2346", type=str, help="Port number"
     )
     parser.add_argument(
-        "--batch_size", default=0, type=int, help="batch size"
+        "--batch_size", default=5, type=int, help="batch size"
     )
     parser.add_argument(
-        "--mlflow_uri", default="http://127.0.0.1:5000", type=str , help="mlflow_uri"
+        "--eval_interval", default=5, type=int, help="eval interval"
     )
-
+    parser.add_argument(
+        "--st_iter", default=0, type=int, help="start interation"
+    )
+    parser.add_argument(
+        "--end_iter", default=25, type=int, help="end interation"
+    )
+    parser.add_argument(
+        "--logging_interval", default=5, type=int, help="log interval"
+    )
+    parser.add_argument(
+        "--lr", default=0.0001, type=float, help="learning rate"
+    )
+    parser.add_argument(
+        "--amp", default=False, type=bool, help="amp"
+    )
+    parser.add_argument(
+        "--ckpt_path", default=None, type=str, help="checkpoint path"
+    )
+    parser.add_argument(
+        "--data_root_dir", default="/nas/common_data/dataset_for_EasyOcr/dataset_for_detection_model/", type=str, help="data dir"
+    )
     args = parser.parse_args()
 
     # load configure
     exp_name = args.yaml
     config = load_yaml(args.yaml)
+    list_config_keys = set(config["train"]).intersection(vars(args))
+    for key in list_config_keys:
+        config["train"][key] = getattr(args, key)          
 
-    # Add batch size as an argument
-    if args.batch_size != 0 and args.batch_size != None:
-        config["train"]["batch_size"] = args.batch_size
-
-    if args.mlflow_uri != None:
-        config["train"]["mlflow_uri"] = args.mlflow_uri
     print("-" * 20 + " Options " + "-" * 20)
     print(yaml.dump(config))
     print("-" * 40)
@@ -494,7 +513,7 @@ def main():
 
     # Duplicate yaml file to result_dir
     shutil.copy(
-        "config/" + args.yaml + ".yaml", os.path.join(res_dir, args.yaml) + ".yaml"
+        "/nas/thuchk/repos/EasyOCR/trainer/craft/config/" + args.yaml + ".yaml", os.path.join(res_dir, args.yaml) + ".yaml"
     )
 
     if config["mode"] == "weak_supervision":

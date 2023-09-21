@@ -118,3 +118,4 @@ gt_img*.txt
 mlruns/
 exp/
 saved_models/
+*.csv
