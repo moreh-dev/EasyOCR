@@ -26,14 +26,14 @@ def get_config(file_path):
         opt.character = opt.number + opt.symbol + opt.lang_char
     return opt
 
-opt = get_config("./config_files/en_filtered_config.yaml")
+opt = get_config("trainer/config_files/en_filtered_config.yaml")
 
 parser = argparse.ArgumentParser(description="recognition train")
 
 for key, value in opt.items():
     parser.add_argument(f'--{key}', type=type(value), default=value)
     
-parser.add_argument('--config', type=str, default="./config_files/en_filtered_config.yaml")
+parser.add_argument('--config', type=str, default="trainer/config_files/en_filtered_config.yaml")
 parser.add_argument('--amp', type=bool, default=False)
 args = parser.parse_args()
 
