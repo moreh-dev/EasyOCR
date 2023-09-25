@@ -6,11 +6,6 @@ from utils import AttrDict
 import pandas as pd
 import argparse
 
-parser = argparse.ArgumentParser(description="recognition train")
-parser.add_argument('--batch_size', type=int)
-parser.add_argument('--mlflow_uri', type=str)
-args = parser.parse_args()
-
 cudnn.benchmark = True
 cudnn.deterministic = False
 
@@ -29,14 +24,23 @@ def get_config(file_path):
         opt.character= ''.join(characters)
     else:
         opt.character = opt.number + opt.symbol + opt.lang_char
-    # Add batch size as an argument
-    if args.batch_size!=0 or args.batch_size!=None:
-        opt.batch_size = args.batch_size
-    if args.mlflow_uri!=None:
-        opt.mlflow_uri = args.mlflow_uri
     return opt
 
-opt = get_config("config_files/en_filtered_config.yaml")
+opt = get_config("trainer/config_files/en_filtered_config.yaml")
+
+parser = argparse.ArgumentParser(description="recognition train")
+
+for key, value in opt.items():
+    parser.add_argument(f'--{key}', type=type(value), default=value)
+    
+parser.add_argument('--config', type=str, default="trainer/config_files/en_filtered_config.yaml")
+parser.add_argument('--amp', type=bool, default=False)
+args = parser.parse_args()
+
+opt = get_config(args.config)
+for key, value in opt.items():
+    opt[key] = getattr(args, key)
+
 os.makedirs(f'./saved_models/{opt.experiment_name}', exist_ok=True)
 
-train(opt, amp=False)
+train(opt, amp=args.amp)

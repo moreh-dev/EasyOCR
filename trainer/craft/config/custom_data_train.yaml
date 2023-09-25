@@ -9,18 +9,17 @@ mode: "weak_supervision"
 
 
 train:
-  mlflow_uri : http://127.0.0.1:5000
   backbone : vgg
   use_synthtext: False # If you want to combine SynthText in train time as CRAFT did, you can turn on this option
   synth_data_dir: "/data/SynthText/"
   synth_ratio: 5
   real_dataset: custom
-  ckpt_path: "./pretrained_model/CRAFT_clr_amp_29500.pth"
+  ckpt_path: "/nas/thuchk/repos/EasyOCR/trainer/craft/pretrained_model/CRAFT_clr_amp_29500.pth"
   eval_interval: 5
   batch_size: 5
   st_iter: 0
   end_iter: 25
-  log_interval: 5 # log after each 5 steps
+  logging_interval: 5 # log after each 5 steps
   lr: 0.0001
   lr_decay: 7500
   gamma: 0.2
