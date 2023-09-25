@@ -348,7 +348,7 @@ class Trainer(object):
                 loss_value += loss.item()
                 batch_time += end_time - start_time_step
                 elapsed_time += batch_time
-                if train_step > 0 and train_step % self.config.train.logging_interval == 0:
+                if train_step % self.config.train.logging_interval == 0:
                     mean_loss = loss_value / self.config.train.logging_interval
                     loss_value = 0
                     interval_throughput = (self.config.train.logging_interval * self.config.train.batch_size) / batch_time
