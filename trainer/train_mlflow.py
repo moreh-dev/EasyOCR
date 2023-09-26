@@ -49,6 +49,8 @@ def train(opt, show_number = 2, amp=False):
     opt.select_data = opt.select_data.split('-')
     opt.batch_ratio = opt.batch_ratio.split('-')
     train_dataset = Batch_Balanced_Dataset(opt)
+    _dataset, _ = hierarchical_dataset(root=opt.train_data, opt=opt, select_data=opt.select_data)
+    len_dataset = len(_dataset)
 
     log = open(f'./saved_models/{opt.experiment_name}/log_dataset.txt', 'a', encoding="utf8")
     AlignCollate_valid = AlignCollate(imgH=opt.imgH, imgW=opt.imgW, keep_ratio_with_pad=opt.PAD, contrast_adjust=opt.contrast_adjust)
@@ -321,8 +323,9 @@ def train(opt, show_number = 2, amp=False):
 
         if i == opt.num_iter:
             throughput = opt.num_iter * opt.batch_size / runtime
+            epoch_runtime = len_dataset / throughput
             mlflow.log_metric("avg_throughput", throughput)
-            mlflow.log_metric("epoch_runtime", runtime)
+            mlflow.log_metric("epoch_runtime", epoch_runtime)
             mlflow.log_params({'model': "recognition" })
             print('end the training')
             mlflow.end_run()

@@ -428,10 +428,11 @@ class Trainer(object):
                 train_step += 1
                 if train_step >= whole_training_step:
                     # Log average throughput
-                    total_data_samples = self.config.train.batch_size * whole_training_step
-
-                    mlflow.log_metric('avg_throughput', total_data_samples/elapsed_time)
-                    mlflow.log_metric('epoch_runtime', elapsed_time)
+                    total_train_data_samples = self.config.train.batch_size * whole_training_step
+                    len_dataset = len(trn_real_dataset) * self.config.train.batch_size
+                    thoughput = total_train_data_samples / elapsed_time
+                    mlflow.log_metric('avg_throughput', thoughput)
+                    mlflow.log_metric('epoch_runtime', len_dataset/elapsed_time)
                     mlflow.log_params({'model': 'detection_craft'})
                     mlflow.end_run()
                     break
