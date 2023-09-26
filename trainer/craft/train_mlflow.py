@@ -22,6 +22,13 @@ from eval import main_eval
 from metrics.eval_det_iou import DetectionIoUEvaluator
 from utils.util import copyStateDict, save_parser
 
+def get_num_parameters(model):
+    num_params = 0
+    for param in model.parameters():
+        num_params += param.numel()
+    # in million
+    num_params /= 10**6
+    return num_params
 
 class Trainer(object):
     def __init__(self, config, gpu, mode):
@@ -253,6 +260,8 @@ class Trainer(object):
         )
         # with mlflow_runner:
         mlflow.start_run()
+        num_params = get_num_parameters(craft)
+        mlflow.log_param('num_params', num_params)        
         while train_step < whole_training_step:
             
             for (

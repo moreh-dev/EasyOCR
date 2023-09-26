@@ -32,6 +32,14 @@ def count_parameters(model):
     print(f"Total Trainable Params: {total_params}")
     return total_params
 
+def get_num_parameters(model):
+    num_params = 0
+    for param in model.parameters():
+        num_params += param.numel()
+    # in million
+    num_params /= 10**6
+    return num_params
+
 def train(opt, show_number = 2, amp=False):
     """ dataset preparation """
     if not opt.data_filtering_off:
@@ -183,6 +191,9 @@ def train(opt, show_number = 2, amp=False):
     # experiment = mlflow.get_experiment_by_name(experiment_name)
     # mlflow_runner = mlflow.start_run(run_name=f'{opt.batch_size}_{current_datetime}', experiment_id=experiment.experiment_id)
     mlflow.start_run()
+    num_params = get_num_parameters(model)
+    mlflow.log_param('num_params', num_params)
+    mlflow.log_param('num_params_required_grad', params_num)
     start_time = time.time()
     best_accuracy = -1
     best_norm_ED = -1
