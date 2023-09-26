@@ -308,7 +308,7 @@ def train(opt, show_number = 2, amp=False):
                 t1=time.time()
 
         # Log thoughput and loss to mlflow
-        if (i % opt.logging_interval == 0) and (i!=0):
+        if (i % opt.logging_interval == 0):
             interval_time = time.time() - start_interval_time
             throughput = opt.logging_interval * opt.batch_size / interval_time
             mlflow.log_metric("loss", cost.item(), step=i)
