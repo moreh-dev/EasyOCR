@@ -22,6 +22,13 @@ from eval import main_eval
 from metrics.eval_det_iou import DetectionIoUEvaluator
 from utils.util import copyStateDict, save_parser
 
+def get_num_parameters(model):
+    num_params = 0
+    for param in model.parameters():
+        num_params += param.numel()
+    # in million
+    num_params /= 10**6
+    return num_params
 
 class Trainer(object):
     def __init__(self, config, gpu, mode):
@@ -253,6 +260,8 @@ class Trainer(object):
         )
         # with mlflow_runner:
         mlflow.start_run()
+        num_params = get_num_parameters(craft)
+        mlflow.log_param('num_params', num_params)        
         while train_step < whole_training_step:
             
             for (
@@ -348,7 +357,7 @@ class Trainer(object):
                 loss_value += loss.item()
                 batch_time += end_time - start_time_step
                 elapsed_time += batch_time
-                if train_step > 0 and train_step % self.config.train.logging_interval == 0:
+                if train_step % self.config.train.logging_interval == 0:
                     mean_loss = loss_value / self.config.train.logging_interval
                     loss_value = 0
                     interval_throughput = (self.config.train.logging_interval * self.config.train.batch_size) / batch_time
@@ -419,10 +428,11 @@ class Trainer(object):
                 train_step += 1
                 if train_step >= whole_training_step:
                     # Log average throughput
-                    total_data_samples = self.config.train.batch_size * whole_training_step
-
-                    mlflow.log_metric('avg_throughput', total_data_samples/elapsed_time)
-                    mlflow.log_metric('epoch_runtime', elapsed_time)
+                    total_train_data_samples = self.config.train.batch_size * whole_training_step
+                    len_dataset = len(trn_real_dataset) * self.config.train.batch_size
+                    thoughput = total_train_data_samples / elapsed_time
+                    mlflow.log_metric('avg_throughput', thoughput)
+                    mlflow.log_metric('epoch_runtime', len_dataset/elapsed_time)
                     mlflow.log_params({'model': 'detection_craft'})
                     mlflow.end_run()
                     break

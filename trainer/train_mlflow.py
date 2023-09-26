@@ -32,6 +32,14 @@ def count_parameters(model):
     print(f"Total Trainable Params: {total_params}")
     return total_params
 
+def get_num_parameters(model):
+    num_params = 0
+    for param in model.parameters():
+        num_params += param.numel()
+    # in million
+    num_params /= 10**6
+    return num_params
+
 def train(opt, show_number = 2, amp=False):
     """ dataset preparation """
     if not opt.data_filtering_off:
@@ -41,6 +49,8 @@ def train(opt, show_number = 2, amp=False):
     opt.select_data = opt.select_data.split('-')
     opt.batch_ratio = opt.batch_ratio.split('-')
     train_dataset = Batch_Balanced_Dataset(opt)
+    _dataset, _ = hierarchical_dataset(root=opt.train_data, opt=opt, select_data=opt.select_data)
+    len_dataset = len(_dataset)
 
     log = open(f'./saved_models/{opt.experiment_name}/log_dataset.txt', 'a', encoding="utf8")
     AlignCollate_valid = AlignCollate(imgH=opt.imgH, imgW=opt.imgW, keep_ratio_with_pad=opt.PAD, contrast_adjust=opt.contrast_adjust)
@@ -183,6 +193,9 @@ def train(opt, show_number = 2, amp=False):
     # experiment = mlflow.get_experiment_by_name(experiment_name)
     # mlflow_runner = mlflow.start_run(run_name=f'{opt.batch_size}_{current_datetime}', experiment_id=experiment.experiment_id)
     mlflow.start_run()
+    num_params = get_num_parameters(model)
+    mlflow.log_param('num_params', num_params)
+    mlflow.log_param('num_params_required_grad', params_num)
     start_time = time.time()
     best_accuracy = -1
     best_norm_ED = -1
@@ -297,7 +310,7 @@ def train(opt, show_number = 2, amp=False):
                 t1=time.time()
 
         # Log thoughput and loss to mlflow
-        if (i % opt.logging_interval == 0) and (i!=0):
+        if (i % opt.logging_interval == 0):
             interval_time = time.time() - start_interval_time
             throughput = opt.logging_interval * opt.batch_size / interval_time
             mlflow.log_metric("loss", cost.item(), step=i)
@@ -310,8 +323,9 @@ def train(opt, show_number = 2, amp=False):
 
         if i == opt.num_iter:
             throughput = opt.num_iter * opt.batch_size / runtime
+            epoch_runtime = len_dataset / throughput
             mlflow.log_metric("avg_throughput", throughput)
-            mlflow.log_metric("epoch_runtime", runtime)
+            mlflow.log_metric("epoch_runtime", epoch_runtime)
             mlflow.log_params({'model': "recognition" })
             print('end the training')
             mlflow.end_run()
