@@ -206,11 +206,30 @@ class Trainer(object):
         )
 
         # OPTIMIZER ---------------------------------------------------------------------------------------------------#
-        optimizer = optim.Adam(
-            craft.parameters(),
-            lr=self.config.train.lr,
-            weight_decay=self.config.train.weight_decay,
-        )
+        optimizer_algorithm = self.config.train.optimizer_algorithm
+        if optimizer_algorithm == "Adam":
+            optimizer = optim.Adam(
+                craft.parameters(),
+                lr=self.config.train.lr,
+                weight_decay=self.config.train.weight_decay,
+            )
+        elif optimizer_algorithm == "AdamW":
+            optimizer = optim.AdamW(
+                craft.parameters(),
+                lr=self.config.train.lr,
+                betas=(0.9, 0.999),
+                weight_decay=0.01,
+                eps=1e-08
+                )
+        elif optimizer_algorithm == "RMSprop":
+            optimizer = optim.RMSprop(
+                craft.parameters(),
+                lr=self.config.train.lr,
+                alpha=0.99,
+                momentum=0,
+                weight_decay=0,
+                eps=1e-08,
+                )
 
         if self.config.train.ckpt_path is not None and self.config.train.st_iter != 0:
             optimizer.load_state_dict(copyStateDict(self.net_param["optimizer"]))
@@ -501,6 +520,9 @@ def main():
     )
     parser.add_argument(
         "--data_root_dir", default="/nas/common_data/dataset_for_EasyOcr/dataset_for_detection_model/", type=str, help="data dir"
+    )
+    parser.add_argument(
+        "--optimizer_algorithm", default="Adam", type=str, help="optimizer algorithm"
     )
     args = parser.parse_args()
 
