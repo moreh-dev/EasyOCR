@@ -218,7 +218,7 @@ class Trainer(object):
                 craft.parameters(),
                 lr=self.config.train.lr,
                 betas=(0.9, 0.999),
-                weight_decay=0.01,
+                weight_decay=self.config.train.weight_decay,
                 eps=1e-08
                 )
         elif optimizer_algorithm == "RMSprop":
@@ -227,7 +227,7 @@ class Trainer(object):
                 lr=self.config.train.lr,
                 alpha=0.99,
                 momentum=0,
-                weight_decay=0,
+                weight_decay=self.config.train.weight_decay,
                 eps=1e-08,
                 )
 
