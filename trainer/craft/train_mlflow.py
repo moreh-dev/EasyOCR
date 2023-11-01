@@ -22,6 +22,14 @@ from eval import main_eval
 from metrics.eval_det_iou import DetectionIoUEvaluator
 from utils.util import copyStateDict, save_parser
 
+import subprocess
+
+desired_version = "1.23.1"
+
+if np.__version__ != desired_version:
+    print("NumPy version is not the desired version. Installing version", desired_version)
+    subprocess.check_call(["pip", "install", "numpy==" + desired_version])
+    
 def get_num_parameters(model):
     num_params = 0
     for param in model.parameters():
