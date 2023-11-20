@@ -555,9 +555,9 @@ def main():
         os.makedirs(res_dir)
 
     # Duplicate yaml file to result_dir
-    shutil.copy(
-        "/nas/thuchk/repos/EasyOCR/trainer/craft/config/" + args.yaml + ".yaml", os.path.join(res_dir, args.yaml) + ".yaml"
-    )
+    # shutil.copy(
+    #     "/nas/thuchk/repos/EasyOCR/trainer/craft/config/" + args.yaml + ".yaml", os.path.join(res_dir, args.yaml) + ".yaml"
+    # )
 
     if config["mode"] == "weak_supervision":
         mode = "weak_supervision"
