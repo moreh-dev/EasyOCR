@@ -23,6 +23,7 @@ train:
   lr: 0.0001
   lr_decay: 7500
   gamma: 0.2
+  optimizer_algorithm: "Adam"
   weight_decay: 0.00001
   num_workers: 0 # On single gpu, train.py execution only works when num worker = 0 / On multi-gpu, you can set num_worker > 0 to speed up
   amp: False
